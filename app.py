@@ -3,63 +3,62 @@ import cv2
 import numpy as np
 from PIL import Image
 
-# ตั้งค่าหน้าจอ
-st.set_page_config(page_title="ICD Align", layout="centered")
+st.set_page_config(page_title="ICD Detector", layout="centered")
 
-# ปรับ CSS เพื่อลดช่องว่างระหว่างรูป Guide และกล้อง ให้ขยับมาติดกันที่สุด
-st.markdown("""
-    <style>
-    .block-container { padding-top: 1rem; padding-bottom: 0rem; }
-    div[data-testid="stImage"] { margin-bottom: -50px; }
-    div[data-testid="stCameraInput"] { margin-top: -20px; }
-    </style>
-    """, unsafe_allow_html=True)
+# ปรับให้ส่วนประกอบชิดกัน
+st.markdown("<style>div[data-testid='stImage'] { margin-bottom: -60px; } </style>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #00f2fe;'>💧 เล็งขีดขวดให้ตรงเส้นแดง</h3>", unsafe_allow_html=True)
 
-st.markdown("<h3 style='text-align: center; color: #00f2fe; font-size: 20px;'>💧 เล็งขีดขวดให้ตรงเส้นแดง</h3>", unsafe_allow_html=True)
-
-# --- ส่วนการเล็ง (Alignment Zone) ---
-# แสดงรูป Guide โดยบีบขนาดให้เล็กลงเพื่อไม่ให้ดันกล้องตกขอบจอ
+# 1. แสดงรูป Guide
 try:
-    guide_img = Image.open('guide_frame.png')
-    st.image(guide_img, use_container_width=True)
+    st.image('guide_frame.png', use_container_width=True)
 except:
-    st.error("ไม่พบไฟล์ Guide")
+    st.info("ระบบพร้อมใช้งาน")
 
-# วางกล้องต่อท้ายทันที
-img_file = st.camera_input("แสกนขวดตรงนี้")
+# 2. ส่วนถ่ายรูป
+img_file = st.camera_input("สแกนขวดตรงนี้")
 
-# --- ส่วนการประมวลผล ---
-if img_file is not None:
-    image = Image.open(img_file)
-    img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+if img_file:
+    img = cv2.cvtColor(np.array(Image.open(img_file)), cv2.COLOR_RGB2BGR)
     output = img.copy()
     
+    # --- จุดที่ต้องเช็ค: พิกเซลเหล่านี้ต้องตรงกับตำแหน่งในรูปถ่ายจริง ---
     px_900, px_100 = 1107, 1471
     
-    # วาดเส้นแดงเช็กตำแหน่งในรูปที่ถ่ายได้
-    cv2.line(output, (0, px_900), (img.shape[1], px_900), (0, 0, 255), 8)
-    cv2.line(output, (0, px_100), (img.shape[1], px_100), (0, 0, 255), 8)
+    # วาดเส้นไกด์สีแดง
+    cv2.line(output, (0, px_900), (img.shape[1], px_900), (0, 0, 255), 5)
+    cv2.line(output, (0, px_100), (img.shape[1], px_100), (0, 0, 255), 5)
 
-    # ค้นหาระดับน้ำ
+    # --- การประมวลผลที่ "หาเจอง่ายขึ้น" ---
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edged = cv2.Canny(cv2.GaussianBlur(gray, (7,7), 0), 40, 120)
-    lines = cv2.HoughLinesP(edged, 1, np.pi/180, 60, minLineLength=100, maxLineGap=10)
+    # เพิ่มความฟุ้งเพื่อให้เส้นแสงสะท้อนจางลง
+    blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+    # ปรับ Canny ให้จับเส้นขอบได้ไวขึ้น
+    edged = cv2.Canny(blurred, 30, 100)
+    
+    # ปรับ HoughLines ให้หาเส้นเจอได้ง่ายขึ้นแม้เส้นจะไม่ยาวมาก
+    lines = cv2.HoughLinesP(edged, 1, np.pi/180, threshold=35, minLineLength=40, maxLineGap=25)
 
     detected_y = None
     if lines is not None:
-        lines = sorted(lines, key=lambda l: l[0][1], reverse=True)
+        # หาเส้นแนวนอนในช่วงพิกเซลที่เราสนใจ (เผื่อระยะให้กว้างขึ้น)
+        search_min = px_900 - 50 
+        search_max = px_100 + 50
+        
+        lines = sorted(lines, key=lambda l: l[0][1])
         for line in lines:
             x1, y1, x2, y2 = line[0]
-            if abs(y1 - y2) < 5 and px_900 < y1 < px_100:
+            # กรองเฉพาะเส้นที่ค่อนข้างเป็นแนวนอน
+            if abs(y1 - y2) < 8 and search_min < y1 < search_max:
                 detected_y = y1
-                cv2.line(output, (x1, y1), (x2, y2), (0, 255, 0), 12)
+                cv2.line(output, (x1, y1), (x2, y2), (0, 255, 0), 10)
                 break
 
-    # แสดงผล
+    # 3. แสดงผล
     if detected_y:
         volume = 100 + ((px_100 - detected_y) / (px_100 - px_900) * 800)
-        st.markdown(f"<h2 style='text-align: center; color: #00ff00;'>{int(volume)} ml</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center; color: #00ff00;'>{int(volume)} ml</h1>", unsafe_allow_html=True)
     else:
-        st.error("หาผิวน้ำไม่เจอ")
-
+        st.error("❌ หาผิวน้ำไม่เจอ: ลองขยับมือถือให้ขีด 900 บนขวดตรงกับเส้นแดงในภาพ")
+    
     st.image(output, channels="BGR", use_container_width=True)
