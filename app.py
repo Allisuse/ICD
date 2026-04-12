@@ -1,483 +1,141 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>ICD Detector</title>
+Live camera
+
+import streamlit as st
+import cv2
+import numpy as np
+from PIL import Image
+import streamlit.components.v1 as components
+
+st.set_page_config(page_title="ICD Detector", layout="centered")
+
+st.markdown("""
 <style>
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  body {
-    background: #080c16;
-    color: #dde8ff;
-    font-family: -apple-system, "Segoe UI", sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-height: 100svh;
-    overscroll-behavior: none;
-  }
-
-  header {
-    padding: 14px 16px 8px;
-    text-align: center;
-    width: 100%;
-  }
-
-  header h1 {
-    font-size: 17px;
-    font-weight: 600;
-    color: #00d4ff;
-  }
-
-  header p {
-    font-size: 12px;
-    color: #607090;
-    margin-top: 3px;
-  }
-
-  #video {
-    display: none;
-  }
-
-  #live-canvas,
-  #preview-canvas {
-    width: 100%;
-    max-width: 500px;
-    display: block;
-    background: #000;
-    border-radius: 0;
-    touch-action: manipulation;
-  }
-
-  #preview-canvas {
-    display: none;
-  }
-
-  #controls {
-    width: 100%;
-    max-width: 500px;
-    padding: 12px 14px 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  #result {
-    text-align: center;
-    font-size: 52px;
-    font-weight: 700;
-    color: #00ff88;
-    display: none;
-    padding: 4px 0;
-    letter-spacing: -1px;
-  }
-
-  #error-msg {
-    background: #1f0a0a;
-    border: 1px solid #ff3333;
-    color: #ff8080;
-    border-radius: 10px;
-    padding: 12px 14px;
-    font-size: 14px;
-    line-height: 1.6;
-    display: none;
-    white-space: pre-line;
-  }
-
-  .btn-p {
-    width: 100%;
-    padding: 15px;
-    background: #00d4ff;
-    color: #000;
-    border: none;
-    border-radius: 12px;
-    font-size: 17px;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .btn-p:active {
-    opacity: 0.75;
-  }
-
-  .btn-s {
-    width: 100%;
-    padding: 13px;
-    background: transparent;
-    color: #00d4ff;
-    border: 1.5px solid #00d4ff;
-    border-radius: 12px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    display: none;
-  }
-
-  .btn-s:active {
-    opacity: 0.7;
-  }
-
-  #perm-screen {
-    display: none;
-    max-width: 320px;
-    margin: 48px 20px;
-    background: #12101e;
-    border: 1px solid #332255;
-    border-radius: 14px;
-    padding: 28px 20px;
-    text-align: center;
-  }
-
-  #perm-screen h2 {
-    color: #bb88ff;
-    font-size: 16px;
-    margin-bottom: 10px;
-  }
-
-  #perm-screen p {
-    font-size: 13px;
-    color: #8877aa;
-    line-height: 1.7;
-  }
-
-  #perm-screen button {
-    margin-top: 16px;
-    padding: 11px 22px;
-    background: #553388;
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    font-size: 15px;
-    cursor: pointer;
-  }
-
-  #loading {
-    width: 100%;
-    max-width: 500px;
-    height: 260px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #000;
-    color: #607090;
-    font-size: 14px;
-  }
+    .main { background: #0a0a1a; }
+    h3 { font-family: 'Segoe UI', sans-serif; }
 </style>
-</head>
-<body>
+""", unsafe_allow_html=True)
 
-<header>
-  <h1>💧 ICD Volume Detector</h1>
-  <p>เล็งขีดขวดให้ตรงเส้นสีแดง แล้วกด "ถ่ายรูปวิเคราะห์"</p>
-</header>
+st.markdown("<h3 style='text-align: center; color: #00f2fe;'>💧 เล็งขีดขวดให้ตรงเส้นแดง</h3>", unsafe_allow_html=True)
 
-<video id="video" autoplay playsinline muted webkit-playsinline x5-playsinline></video>
-
-<div id="loading">กำลังเปิดกล้อง…</div>
-
-<div id="perm-screen">
-  <h2>⚠️ ไม่สามารถเข้าถึงกล้องได้</h2>
-  <p>
-    ต้องเปิดผ่าน <b>https://</b> หรือ localhost<br><br>
-    <b>iPhone/Safari:</b> Settings → Safari → Camera → Allow<br>
-    <b>Android/Chrome:</b> แตะไอคอนกล้องในแถบที่อยู่ → Allow
-  </p>
-  <button onclick="location.reload()">🔄 ลองใหม่</button>
-</div>
-
-<canvas id="live-canvas"></canvas>
-<canvas id="preview-canvas"></canvas>
-
-<div id="controls">
-  <div id="result"></div>
-  <div id="error-msg"></div>
-  <button class="btn-p" id="snap-btn">📸 ถ่ายรูปวิเคราะห์</button>
-  <button class="btn-s" id="retake-btn">🔄 ถ่ายใหม่</button>
+# ---- LIVE CAMERA WITH CANVAS OVERLAY ----
+# This HTML+JS component shows live camera with red guide lines drawn on top via canvas
+# Two horizontal red lines at 35% and 65% of video height (adjust LINE_TOP_PCT / LINE_BOT_PCT as needed)
+camera_html = """
+<div style="position:relative; width:100%; max-width:480px; margin:0 auto;">
+  <video id="video" autoplay playsinline muted
+         style="width:100%; border-radius:12px; display:block;"></video>
+  <canvas id="overlay"
+          style="position:absolute; top:0; left:0; width:100%; height:100%;
+                 border-radius:12px; pointer-events:none;"></canvas>
+  <div style="text-align:center; margin-top:8px;">
+    <button id="snapBtn"
+            style="background:#00f2fe; color:#000; border:none; padding:10px 28px;
+                   border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer;">
+      📸 ถ่ายรูป
+    </button>
+  </div>
+  <canvas id="snapCanvas" style="display:none;"></canvas>
+  <div id="snapResult" style="text-align:center; margin-top:8px;"></div>
 </div>
 
 <script>
-const LINE_TOP = 0.35;   // 900 ml
-const LINE_BOT = 0.65;   // 100 ml
+const LINE_TOP_PCT = 0.38;   // position of 900ml line  (0 = top, 1 = bottom)
+const LINE_BOT_PCT = 0.62;   // position of 100ml line
 
-const video      = document.getElementById('video');
-const liveCvs    = document.getElementById('live-canvas');
-const lCtx       = liveCvs.getContext('2d', { willReadFrequently: true });
+const video   = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const ctx     = overlay.getContext('2d');
 
-const prevCvs    = document.getElementById('preview-canvas');
-const pCtx       = prevCvs.getContext('2d', { willReadFrequently: true });
+// Start camera
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+  .then(stream => { video.srcObject = stream; })
+  .catch(err => { console.error('Camera error:', err); });
 
-const loading    = document.getElementById('loading');
-const permScreen = document.getElementById('perm-screen');
-const snapBtn    = document.getElementById('snap-btn');
-const retakeBtn  = document.getElementById('retake-btn');
-const resultEl   = document.getElementById('result');
-const errorEl    = document.getElementById('error-msg');
+// Resize overlay canvas to match video each frame
+function drawLines() {
+  const W = video.videoWidth  || video.clientWidth;
+  const H = video.videoHeight || video.clientHeight;
+  overlay.width  = W;
+  overlay.height = H;
 
-// Canvas สำหรับวิเคราะห์แบบ “ไม่มีเส้นแดงทับ”
-const rawCvs = document.createElement('canvas');
-const rCtx   = rawCvs.getContext('2d', { willReadFrequently: true });
+  const y900 = Math.round(H * LINE_TOP_PCT);
+  const y100 = Math.round(H * LINE_BOT_PCT);
 
-let loopRunning = false;
-let currentStream = null;
-
-video.setAttribute('playsinline', '');
-video.setAttribute('webkit-playsinline', '');
-video.muted = true;
-video.autoplay = true;
-
-async function startCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    showPerm();
-    return;
-  }
-
-  const attempts = [
-    { video: { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
-    { video: { facingMode: { exact: 'environment' } }, audio: false },
-    { video: { facingMode: 'environment' }, audio: false },
-    { video: true, audio: false }
-  ];
-
-  for (const c of attempts) {
-    try {
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-        currentStream = null;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia(c);
-      currentStream = stream;
-      video.srcObject = stream;
-
-      await video.play().catch(() => {});
-      return;
-    } catch (e) {
-      if (e.name === 'NotAllowedError' || e.name === 'SecurityError') break;
-    }
-  }
-
-  showPerm();
-}
-
-function showPerm() {
-  loading.style.display = 'none';
-  permScreen.style.display = 'block';
-  snapBtn.style.display = 'none';
-}
-
-function onVideoReady() {
-  if (loopRunning) return;
-  loopRunning = true;
-  loading.style.display = 'none';
-  liveCvs.style.display = 'block';
-  requestAnimationFrame(liveLoop);
-}
-
-video.addEventListener('loadedmetadata', onVideoReady);
-video.addEventListener('canplay', onVideoReady);
-
-startCamera();
-
-function fitCanvasToVideo(canvas, W, H) {
-  if (canvas.width !== W) canvas.width = W;
-  if (canvas.height !== H) canvas.height = H;
-}
-
-function drawFrame(ctx, sourceVideo, W, H) {
   ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(sourceVideo, 0, 0, W, H);
+
+  // Shadow glow effect
+  ctx.shadowColor = 'rgba(255,0,0,0.8)';
+  ctx.shadowBlur  = 10;
+  ctx.strokeStyle = '#ff2222';
+  ctx.lineWidth   = 4;
+
+  // Top line (900 ml)
+  ctx.beginPath(); ctx.moveTo(0, y900); ctx.lineTo(W, y900); ctx.stroke();
+  // Bottom line (100 ml)
+  ctx.beginPath(); ctx.moveTo(0, y100); ctx.lineTo(W, y100); ctx.stroke();
+
+  // Labels
+  ctx.shadowBlur = 0;
+  ctx.fillStyle  = '#ff2222';
+  ctx.font       = 'bold 18px Segoe UI, sans-serif';
+  ctx.fillText('─ 900 ml', 8, y900 - 6);
+  ctx.fillText('─ 100 ml', 8, y100 - 6);
+
+  requestAnimationFrame(drawLines);
 }
-
-function liveLoop() {
-  const W = video.videoWidth;
-  const H = video.videoHeight;
-
-  if (!W || !H) {
-    requestAnimationFrame(liveLoop);
-    return;
-  }
-
-  fitCanvasToVideo(liveCvs, W, H);
-  fitCanvasToVideo(rawCvs, W, H);
-
-  // raw canvas = เอาไว้ตรวจจับอย่างเดียว ไม่มีเส้นแดง
-  drawFrame(rCtx, video, W, H);
-
-  // live canvas = ภาพจริง + overlay
-  drawFrame(lCtx, video, W, H);
-  drawGuideLines(lCtx, W, H);
-
-  requestAnimationFrame(liveLoop);
-}
-
-function drawGuideLines(ctx, W, H) {
-  const y900 = Math.round(H * LINE_TOP);
-  const y100 = Math.round(H * LINE_BOT);
-  const lw   = Math.max(4, Math.round(W * 0.007));
-
-  ctx.save();
-
-  ctx.fillStyle = 'rgba(255,20,20,0.10)';
-  ctx.fillRect(0, y900, W, y100 - y900);
-
-  ctx.strokeStyle = '#ff2020';
-  ctx.lineWidth   = lw;
-
-  ctx.beginPath();
-  ctx.moveTo(0, y900);
-  ctx.lineTo(W, y900);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(0, y100);
-  ctx.lineTo(W, y100);
-  ctx.stroke();
-
-  const tick = Math.round(H * 0.045);
-  ctx.lineWidth = lw + 2;
-
-  [[0,y900],[W,y900],[0,y100],[W,y100]].forEach(([x,y]) => {
-    ctx.beginPath();
-    ctx.moveTo(x, y - tick);
-    ctx.lineTo(x, y + tick);
-    ctx.stroke();
-  });
-
-  const fs = Math.max(16, Math.round(H * 0.042));
-  ctx.font = `bold ${fs}px -apple-system, sans-serif`;
-  ctx.textBaseline = 'alphabetic';
-
-  drawLabel(ctx, '▶ 900 ml', 12, y900 - 10, fs);
-  drawLabel(ctx, '▶ 100 ml', 12, y100 - 10, fs);
-
-  ctx.restore();
-}
-
-function drawLabel(ctx, text, x, y, fs) {
-  const pad = 8;
-  const tw = ctx.measureText(text).width;
-
-  ctx.fillStyle = 'rgba(0,0,0,0.60)';
-  if (ctx.roundRect) {
-    ctx.beginPath();
-    ctx.roundRect(x - pad, y - fs + 2, tw + pad * 2, fs + 8, 6);
-    ctx.fill();
-  } else {
-    ctx.fillRect(x - pad, y - fs + 2, tw + pad * 2, fs + 8);
-  }
-
-  ctx.fillStyle = '#ff7070';
-  ctx.fillText(text, x, y);
-}
-
-snapBtn.addEventListener('click', () => {
-  const W = video.videoWidth;
-  const H = video.videoHeight;
-
-  if (!W || !H) {
-    showError('กล้องยังไม่พร้อม');
-    return;
-  }
-
-  fitCanvasToVideo(prevCvs, W, H);
-  pCtx.drawImage(rawCvs, 0, 0);  // ใช้ภาพ raw ที่ไม่มีเส้นแดง
-  const px900 = Math.round(H * LINE_TOP);
-  const px100 = Math.round(H * LINE_BOT);
-
-  const detected = findWaterLine(W, H, px900, px100);
-
-  if (detected !== null) {
-    pCtx.strokeStyle = '#00ff88';
-    pCtx.lineWidth   = Math.max(6, Math.round(W * 0.012));
-    pCtx.beginPath();
-    pCtx.moveTo(0, detected);
-    pCtx.lineTo(W, detected);
-    pCtx.stroke();
-
-    const raw    = 100 + ((px100 - detected) / (px100 - px900) * 800);
-    const volume = Math.round(Math.max(0, Math.min(1000, raw)));
-    showResult(volume + ' ml');
-  } else {
-    showError('หาผิวน้ำไม่เจอ\nลองขยับให้ขีด 900 ตรงเส้นแดงบน\nและให้แสงสว่างพอ');
-  }
-
-  liveCvs.style.display  = 'none';
-  prevCvs.style.display   = 'block';
-  snapBtn.style.display   = 'none';
-  retakeBtn.style.display = 'block';
-});
-
-retakeBtn.addEventListener('click', () => {
-  liveCvs.style.display   = 'block';
-  prevCvs.style.display   = 'none';
-  snapBtn.style.display   = 'block';
-  retakeBtn.style.display  = 'none';
-  resultEl.style.display   = 'none';
-  errorEl.style.display    = 'none';
-});
-
-function findWaterLine(W, H, px900, px100) {
-  const margin = 80;
-  const top    = Math.max(0, px900 - margin);
-  const bot    = Math.min(H - 1, px100 + margin);
-  const stripH = bot - top;
-
-  if (stripH <= 0) return null;
-
-  const imgData = rCtx.getImageData(0, top, W, stripH);
-  const d = imgData.data;
-  const scores = new Float32Array(stripH);
-  const step = Math.max(1, Math.floor(W / 100));
-
-  for (let y = 1; y < stripH - 1; y++) {
-    let s = 0;
-    for (let x = 0; x < W; x += step) {
-      const ic = (y * W + x) * 4;
-      const iu = ((y - 1) * W + x) * 4;
-      const id = ((y + 1) * W + x) * 4;
-
-      const bc = (d[ic] + d[ic + 1] + d[ic + 2]) / 3;
-      const bu = (d[iu] + d[iu + 1] + d[iu + 2]) / 3;
-      const bd = (d[id] + d[id + 1] + d[id + 2]) / 3;
-
-      s += Math.abs(bc - bu) + Math.abs(bc - bd);
-    }
-    scores[y] = s;
-  }
-
-  let best = -1;
-  let bestScore = 0;
-
-  for (let y = 2; y < stripH - 2; y++) {
-    if (scores[y] > bestScore) {
-      bestScore = scores[y];
-      best = y;
-    }
-  }
-
-  const mean = scores.reduce((a, b) => a + b, 0) / stripH;
-  if (best === -1 || bestScore < mean * 2.0) return null;
-
-  return top + best;
-}
-
-function showResult(text) {
-  resultEl.textContent = text;
-  resultEl.style.display = 'block';
-  errorEl.style.display = 'none';
-}
-
-function showError(text) {
-  errorEl.textContent = '❌ ' + text;
-  errorEl.style.display = 'block';
-  resultEl.style.display = 'none';
-}
+video.addEventListener('loadedmetadata', drawLines);
+// Fallback if loadedmetadata already fired
+if (video.readyState >= 1) drawLines();
 </script>
-</body>
-</html>
+"""
+
+components.html(camera_html, height=520)
+
+st.markdown("---")
+st.markdown("<h4 style='color:#aaa;'>หรือถ่ายรูปเพื่อวิเคราะห์ปริมาตร</h4>", unsafe_allow_html=True)
+
+# ---- PHOTO CAPTURE + ANALYSIS (unchanged logic) ----
+img_file = st.camera_input("ถ่ายรูปขวดเพื่อวิเคราะห์")
+
+if img_file:
+    img    = cv2.cvtColor(np.array(Image.open(img_file)), cv2.COLOR_RGB2BGR)
+    output = img.copy()
+    h, w   = img.shape[:2]
+
+    # Guide lines at same relative positions as the live overlay
+    px_900 = int(h * 0.38)
+    px_100 = int(h * 0.62)
+
+    cv2.line(output, (0, px_900), (w, px_900), (0, 0, 255), 5)
+    cv2.line(output, (0, px_100), (w, px_100), (0, 0, 255), 5)
+
+    # Edge detection
+    gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (9, 9), 0)
+    edged   = cv2.Canny(blurred, 30, 100)
+
+    lines = cv2.HoughLinesP(edged, 1, np.pi/180,
+                             threshold=35, minLineLength=40, maxLineGap=25)
+    detected_y = None
+
+    if lines is not None:
+        search_min = px_900 - 60
+        search_max = px_100 + 60
+        lines = sorted(lines, key=lambda l: l[0][1])
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if abs(y1 - y2) < 8 and search_min < y1 < search_max:
+                detected_y = y1
+                cv2.line(output, (x1, y1), (x2, y2), (0, 255, 0), 10)
+                break
+
+    if detected_y:
+        volume = 100 + ((px_100 - detected_y) / (px_100 - px_900) * 800)
+        st.markdown(
+            f"<h1 style='text-align:center; color:#00ff00;'>{int(volume)} ml</h1>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.error("❌ หาผิวน้ำไม่เจอ — ลองขยับให้ขีด 900 ตรงกับเส้นแดงบน")
+
+    st.image(output, channels="BGR", use_container_width=True)
