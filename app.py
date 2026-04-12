@@ -4,25 +4,25 @@ import numpy as np
 from PIL import Image
 import streamlit.components.v1 as components
 
-# ตั้งค่าหน้าจอ
 st.set_page_config(page_title="ICD Live Detector", layout="centered")
 
-# ปรับแต่ง CSS พื้นหลัง
+# ปรับ CSS ให้เหมาะกับหน้าจอมือถือ
 st.markdown("""
 <style>
     .main { background: #0a0a1a; }
-    div[data-testid="stCameraInput"] { margin-top: -30px; }
+    /* ลดช่องว่างเพื่อให้องค์ประกอบเบียดกันในหน้าเดียว */
+    .block-container { padding-top: 1rem; padding-bottom: 0rem; }
+    iframe { border-radius: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h3 style='text-align: center; color: #00f2fe;'>💧 เล็งขีดขวดให้ตรงเส้นแดงขณะถ่าย</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #00f2fe;'>💧 เล็งขีดขวดให้ตรงเส้นแดง</h3>", unsafe_allow_html=True)
 
-# ---- 1. LIVE CAMERA OVERLAY (ส่วนที่ทำให้เห็นเส้นบนมือถือ) ----
-# ใช้ JavaScript เพื่อเปิดกล้องหลัง (environment) และวาดเส้นทับ
+# ---- 1. LIVE CAMERA OVERLAY (ปรับปรุงเพื่อมือถือ) ----
 camera_html = """
-<div style="position:relative; width:100%; max-width:480px; margin:0 auto;">
+<div style="position:relative; width:100%; max-width:480px; margin:0 auto; overflow:hidden;">
     <video id="video" autoplay playsinline muted 
-           style="width:100%; border-radius:12px; display:block; background:#000;"></video>
+           style="width:100%; border-radius:12px; display:block; background:#000; transform: scaleX(1);"></video>
     <canvas id="overlay" 
             style="position:absolute; top:0; left:0; width:100%; height:100%; 
                    pointer-events:none;"></canvas>
@@ -33,28 +33,43 @@ const video = document.getElementById('video');
 const overlay = document.getElementById('overlay');
 const ctx = overlay.getContext('2d');
 
-// ตั้งค่าตำแหน่งเส้น (0.38 = 38% จากด้านบน, 0.62 = 62% จากด้านบน)
-const LINE_TOP_PCT = 0.38;
+const LINE_TOP_PCT = 0.38; 
 const LINE_BOT_PCT = 0.62;
 
-// ขอสิทธิ์เปิดกล้องหลัง
-navigator.mediaDevices.getUserMedia({ 
-    video: { facingMode: 'environment' }, 
-    audio: false 
-})
-.then(stream => { video.srcObject = stream; })
-.catch(err => { alert('ไม่สามารถเปิดกล้องได้: ' + err); });
+// ตั้งค่าขอใช้กล้องหลัง (Environment) สำหรับมือถือ
+const constraints = {
+    video: { 
+        facingMode: { exact: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+    },
+    audio: false
+};
 
-function draw() {
+// ถ้าเป็น Browser ในคอมอาจไม่มีกล้องหลัง ให้ลองขอแบบทั่วไปถ้าแบบ exact พลาด
+navigator.mediaDevices.getUserMedia(constraints)
+    .then(stream => { video.srcObject = stream; })
+    .catch(err => {
+        console.log("พยายามเปิดกล้องหลังแบบทั่วไป...");
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(stream => { video.srcObject = stream; })
+            .catch(e => alert("ไม่สามารถเข้าถึงกล้องได้: " + e));
+    });
+
+function drawLines() {
     overlay.width = video.clientWidth;
     overlay.height = video.clientHeight;
-    const H = overlay.height;
     const W = overlay.width;
+    const H = overlay.height;
 
     ctx.clearRect(0, 0, W, H);
+    
+    // ตั้งค่าเส้นแดงแบบเรืองแสง (Glow Effect) เพื่อให้มองชัดในที่มืด
+    ctx.shadowColor = 'red';
+    ctx.shadowBlur = 15;
     ctx.strokeStyle = '#ff0000';
     ctx.lineWidth = 4;
-    ctx.setLineDash([5, 5]); // เส้นประเพื่อให้มองเห็นผิวน้ำง่ายขึ้น
+    ctx.setLineDash([10, 10]); 
 
     // วาดเส้น 900ml
     ctx.beginPath();
@@ -68,43 +83,36 @@ function draw() {
     ctx.lineTo(W, H * LINE_BOT_PCT);
     ctx.stroke();
 
+    ctx.shadowBlur = 0;
     ctx.setLineDash([]);
     ctx.fillStyle = '#ff0000';
-    ctx.font = 'bold 16px Arial';
-    ctx.fillText('900 ml', 10, (H * LINE_TOP_PCT) - 10);
-    ctx.fillText('100 ml', 10, (H * LINE_BOT_PCT) - 10);
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText('─ 900 ml', 10, (H * LINE_TOP_PCT) - 10);
+    ctx.fillText('─ 100 ml', 10, (H * LINE_BOT_PCT) - 10);
 
-    requestAnimationFrame(draw);
+    requestAnimationFrame(drawLines);
 }
-video.addEventListener('play', draw);
+video.addEventListener('play', drawLines);
 </script>
 """
 
-# แสดงหน้าจอกล้องจำลองพร้อมเส้นไกด์
-components.html(camera_html, height=400)
+# แสดงหน้าจอกล้องสดพร้อมเส้นไกด์ (ความสูง 420 กำลังพอดีกับ iPhone/Android)
+components.html(camera_html, height=420)
 
 st.write("---")
 
-# ---- 2. ส่วนการถ่ายภาพและวิเคราะห์ (Capture & Analysis) ----
-# เนื่องจาก Streamlit ยังไม่รองรับการดึงภาพจาก HTML Component โดยตรง 
-# เรายังคงใช้ camera_input มาตรฐานในการรับรูปเพื่อประมวลผล OpenCV
-img_file = st.camera_input("กดปุ่ม Take Photo ด้านล่างเพื่อวิเคราะห์")
+# ---- 2. ส่วนการถ่ายภาพเพื่อคำนวณ ----
+img_file = st.camera_input("📸 กดถ่ายภาพเพื่อวิเคราะห์ปริมาตร")
 
 if img_file:
-    # โหลดภาพและเตรียม OpenCV
+    # กระบวนการ OpenCV เดิมที่แม่นยำของคุณ
     img = cv2.cvtColor(np.array(Image.open(img_file)), cv2.COLOR_RGB2BGR)
     output = img.copy()
     h, w = img.shape[:2]
 
-    # กำหนดตำแหน่งพิกเซลตามสัดส่วนเดียวกับเส้นไกด์ด้านบน
     px_900 = int(h * 0.38)
     px_100 = int(h * 0.62)
 
-    # แสดงเส้นแดงบนรูปที่ถ่ายได้
-    cv2.line(output, (0, px_900), (w, px_900), (0, 0, 255), 5)
-    cv2.line(output, (0, px_100), (w, px_100), (0, 0, 255), 5)
-
-    # อัลกอริทึมหาผิวน้ำ
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (9, 9), 0)
     edged = cv2.Canny(blurred, 30, 100)
@@ -115,15 +123,18 @@ if img_file:
         lines = sorted(lines, key=lambda l: l[0][1])
         for line in lines:
             x1, y1, x2, y2 = line[0]
-            if abs(y1 - y2) < 10 and (px_900 - 50) < y1 < (px_100 + 50):
+            if abs(y1 - y2) < 10 and (px_900 - 60) < y1 < (px_100 + 60):
                 detected_y = y1
-                cv2.line(output, (x1, y1), (x2, y2), (0, 255, 0), 10)
+                cv2.line(output, (x1, y1), (x2, y2), (0, 255, 0), 12)
                 break
 
     if detected_y:
         volume = 100 + ((px_100 - detected_y) / (px_100 - px_900) * 800)
         st.markdown(f"<h1 style='text-align:center; color:#00ff00;'>{int(volume)} ml</h1>", unsafe_allow_html=True)
     else:
-        st.error("❌ หาผิวน้ำไม่เจอ — ลองเช็ดขวดให้แห้งและเล็งให้ตรงเส้นแดง")
-
+        st.error("หาผิวน้ำไม่เจอ — ลองเล็งให้ขีด 900 ตรงกับเส้นแดงในกล้องด้านบน")
+    
+    # วาดเส้นไกด์แดงทับรูปผลลัพธ์เพื่อเช็คการเล็ง
+    cv2.line(output, (0, px_900), (w, px_900), (0, 0, 255), 5)
+    cv2.line(output, (0, px_100), (w, px_100), (0, 0, 255), 5)
     st.image(output, channels="BGR", use_container_width=True)
